@@ -109,16 +109,35 @@
         </LinearLayout>
     </LinearLayout>
 
-    <Button
-        android:id="@+id/btnSave"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:textSize="18sp"
-        android:textColor="#FFFFFF"
-        android:backgroundTint="#0078D4"
-        android:stateListAnimator="@null"
-        android:text="Save" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnScan"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="18sp"
+            android:textColor="#201F1E"
+            android:backgroundTint="#E1E1E1"
+            android:stateListAnimator="@null"
+            android:text="📷  Scan" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:textSize="18sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#0078D4"
+            android:stateListAnimator="@null"
+            android:text="Save" />
+    </LinearLayout>
 
     <View
         android:layout_width="match_parent"

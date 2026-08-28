@@ -25,6 +25,12 @@ import android.widget.EditText
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -47,7 +53,10 @@ class MainActivity : Activity() {
      */
     private var state = State.RESTING
 
+    private var scanFile: File? = null
+
     companion object {
+        private const val REQ_PHOTO = 1
         private const val REQ_IMPORT = 2
         private const val BLUE = 0xFF0078D4.toInt()
         private const val GRAY = 0xFFE1E1E1.toInt()
@@ -83,6 +92,7 @@ class MainActivity : Activity() {
         autoAdvance(etDia, DIA_MAX, etPulse)
         autoAdvance(etPulse, PULSE_MAX, null)
 
+        findViewById<Button>(R.id.btnScan).setOnClickListener { scan() }
         findViewById<Button>(R.id.btnSave).setOnClickListener { save() }
 
         val list = findViewById<ListView>(R.id.list)
@@ -130,6 +140,99 @@ class MainActivity : Activity() {
     private fun refresh() {
         adapter.replace(db.all())
         tvEmpty.visibility = if (adapter.count == 0) View.VISIBLE else View.GONE
+    }
+
+    // ------------------------------------------------------------------- scan
+
+    /**
+     * Photograph the monitor, OCR it on-device, prefill the three fields.
+     * The shot lives in cache only for the duration of the scan and is
+     * deleted straight after — nothing is kept.
+     */
+    private fun scan() {
+        val dir = File(cacheDir, "ocr").apply { mkdirs() }
+        scanFile = File(dir, "scan.jpg").also { it.delete() }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", scanFile!!)
+
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        packageManager.queryIntentActivities(intent, 0).forEach {
+            grantUriPermission(
+                it.activityInfo.packageName, uri,
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        try {
+            startActivityForResult(intent, REQ_PHOTO)
+        } catch (e: ActivityNotFoundException) {
+            toast("No camera app found")
+        }
+    }
+
+    private fun runOcr(file: File) {
+        try {
+            val image = InputImage.fromFilePath(this, Uri.fromFile(file))
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                .process(image)
+                .addOnSuccessListener { applyOcr(it); file.delete() }
+                .addOnFailureListener { toast("Couldn't read the photo — type the numbers"); file.delete() }
+        } catch (e: Exception) {
+            toast("Couldn't read the photo — type the numbers")
+            file.delete()
+        }
+    }
+
+    private fun applyOcr(text: Text) {
+        // Collect 2-3 digit tokens with their vertical position. Seven-segment
+        // displays confuse general OCR, so map the usual look-alikes first.
+        data class Cand(val v: Int, val y: Int)
+        val cands = ArrayList<Cand>()
+        for (block in text.textBlocks) for (line in block.lines) for (el in line.elements) {
+            val digits = el.text
+                .replace('O', '0').replace('o', '0').replace('D', '0')
+                .replace('l', '1').replace('I', '1').replace('i', '1')
+                .replace('S', '5').replace('s', '5')
+                .replace('B', '8').replace('g', '9').replace('q', '9')
+                .replace('Z', '2').replace('z', '2')
+                .filter { it.isDigit() }
+            if (digits.length in 2..3) {
+                val v = digits.toIntOrNull() ?: continue
+                val y = el.boundingBox?.centerY() ?: continue
+                cands.add(Cand(v, y))
+            }
+        }
+        cands.sortBy { it.y }
+        val vals = cands.map { it.v }
+
+        // First vertically-ordered triple that makes physiological sense:
+        // SYS on top, DIA in the middle, PULSE at the bottom — Omron layout.
+        for (i in vals.indices) for (j in i + 1 until vals.size) for (k in j + 1 until vals.size) {
+            val sy = vals[i]; val d = vals[j]; val pu = vals[k]
+            if (sy in 80..SYS_MAX && d in 40..150 && d < sy && pu in 30..PULSE_MAX) {
+                etSys.setText(sy.toString())
+                etDia.setText(d.toString())
+                etPulse.setText(pu.toString())
+                hideKeyboard(etPulse)
+                toast("Scanned $sy/$d pulse $pu — check, then Save")
+                return
+            }
+        }
+
+        // Partial fallback: fill sys/dia if a sensible pair exists.
+        for (i in vals.indices) for (j in i + 1 until vals.size) {
+            val sy = vals[i]; val d = vals[j]
+            if (sy in 80..SYS_MAX && d in 40..150 && d < sy) {
+                etSys.setText(sy.toString())
+                etDia.setText(d.toString())
+                etPulse.text.clear()
+                etPulse.requestFocus()
+                toast("Got $sy/$d — type the pulse")
+                return
+            }
+        }
+
+        toast("Couldn't read the display — type the numbers")
     }
 
     // ------------------------------------------------------------------- save
@@ -236,7 +339,18 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
-        if (req == REQ_IMPORT && res == RESULT_OK) data?.data?.let { doImport(it) }
+        when (req) {
+            REQ_PHOTO -> {
+                val f = scanFile
+                scanFile = null
+                if (res == RESULT_OK && f != null && f.exists() && f.length() > 0) {
+                    runOcr(f)
+                } else {
+                    f?.delete()
+                }
+            }
+            REQ_IMPORT -> if (res == RESULT_OK) data?.data?.let { doImport(it) }
+        }
     }
 
     private fun doImport(uri: Uri) {
