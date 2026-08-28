@@ -5,13 +5,30 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <!-- State first: pressed before the camera, so it sits at the top. -->
-    <Button
-        android:id="@+id/btnState"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="20sp"
-        android:text="Resting" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnResting"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="18sp"
+            android:stateListAnimator="@null"
+            android:text="😴  Resting" />
+
+        <Button
+            android:id="@+id/btnExercise"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:textSize="18sp"
+            android:stateListAnimator="@null"
+            android:text="🚴  Exercise" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -28,6 +45,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="SYS"
+                android:textColor="#0078D4"
+                android:textStyle="bold"
                 android:textSize="12sp" />
             <EditText
                 android:id="@+id/etSys"
@@ -35,7 +54,7 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:maxLength="3"
-                android:textSize="26sp"
+                android:textSize="28sp"
                 android:hint="130"
                 android:importantForAutofill="no" />
         </LinearLayout>
@@ -50,6 +69,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="DIA"
+                android:textColor="#0078D4"
+                android:textStyle="bold"
                 android:textSize="12sp" />
             <EditText
                 android:id="@+id/etDia"
@@ -57,7 +78,7 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:maxLength="3"
-                android:textSize="26sp"
+                android:textSize="28sp"
                 android:hint="79"
                 android:importantForAutofill="no" />
         </LinearLayout>
@@ -72,6 +93,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="PULSE"
+                android:textColor="#0078D4"
+                android:textStyle="bold"
                 android:textSize="12sp" />
             <EditText
                 android:id="@+id/etPulse"
@@ -79,52 +102,29 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:maxLength="3"
-                android:textSize="26sp"
+                android:textSize="28sp"
                 android:hint="87"
                 android:imeOptions="actionDone"
                 android:importantForAutofill="no" />
         </LinearLayout>
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/ivPreview"
-        android:layout_width="match_parent"
-        android:layout_height="120dp"
-        android:layout_marginTop="8dp"
-        android:adjustViewBounds="true"
-        android:scaleType="fitCenter"
-        android:contentDescription="Photo of the monitor display"
-        android:visibility="gone" />
-
-    <LinearLayout
+    <Button
+        android:id="@+id/btnSave"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btnCamera"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textSize="18sp"
-            android:text="📷  Photo" />
-
-        <Button
-            android:id="@+id/btnSave"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:textSize="18sp"
-            android:text="Save" />
-    </LinearLayout>
+        android:layout_marginTop="12dp"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#0078D4"
+        android:stateListAnimator="@null"
+        android:text="Save" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="12dp"
-        android:background="#33000000" />
+        android:layout_marginTop="14dp"
+        android:background="#22000000" />
 
     <TextView
         android:id="@+id/tvEmpty"
@@ -132,7 +132,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
         android:gravity="center"
-        android:text="No readings yet.\nTap 📷 to photograph the monitor, type the numbers, then Save."
+        android:text="No readings yet.\nType the numbers and tap Save."
         android:textSize="15sp"
         android:visibility="gone" />
 

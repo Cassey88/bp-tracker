@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- No runtime permissions needed: the camera is launched by intent and
-         all files are written into this app's own MediaStore collections. -->
-
-    <queries>
-        <intent>
-            <action android:name="android.media.action.IMAGE_CAPTURE" />
-        </intent>
-    </queries>
+    <!-- No permissions: CSV export/import goes through MediaStore/SAF. -->
 
     <application
         android:allowBackup="true"

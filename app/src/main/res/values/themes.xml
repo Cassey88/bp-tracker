@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Platform theme only: the project carries no external dependencies. -->
-    <style name="AppTheme" parent="@android:style/Theme.Material.Light.DarkActionBar" />
+    <!-- Fluent-inspired: Microsoft blue #0078D4, light neutral background. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.DarkActionBar">
+        <item name="android:colorPrimary">#0078D4</item>
+        <item name="android:colorPrimaryDark">#005A9E</item>
+        <item name="android:colorAccent">#0078D4</item>
+        <item name="android:windowBackground">#F3F3F3</item>
+    </style>
 </resources>

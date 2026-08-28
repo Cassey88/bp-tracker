@@ -5,20 +5,23 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
@@ -31,29 +34,31 @@ class MainActivity : Activity() {
     private lateinit var db: Db
     private lateinit var adapter: ReadingAdapter
 
-    private lateinit var btnState: Button
+    private lateinit var btnResting: Button
+    private lateinit var btnExercise: Button
     private lateinit var etSys: EditText
     private lateinit var etDia: EditText
     private lateinit var etPulse: EditText
-    private lateinit var ivPreview: ImageView
     private lateinit var tvEmpty: TextView
 
     /**
-     * Deliberately not persisted. If it remembered "exercise" from yesterday
-     * you would silently mislabel the next morning's resting reading, so the
-     * toggle resets to resting every time the app starts.
+     * Deliberately not persisted: resets to resting on every app start so a
+     * stale "exercise" from yesterday can't mislabel this morning's reading.
      */
     private var state = State.RESTING
 
-    private var pendingPhoto: Uri? = null
-    private var attachedPhoto: Uri? = null
-
     companion object {
-        private const val REQ_PHOTO = 1
         private const val REQ_IMPORT = 2
+        private const val BLUE = 0xFF0078D4.toInt()
+        private const val GRAY = 0xFFE1E1E1.toInt()
+        private const val DARK = 0xFF201F1E.toInt()
         private val ISO_DATE = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         private val ISO_TIME = SimpleDateFormat("HH:mm", Locale.US)
         private val STAMP = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US)
+
+        private const val SYS_MAX = 280
+        private const val DIA_MAX = 200
+        private const val PULSE_MAX = 220
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,20 +66,23 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         db = Db(this)
 
-        btnState = findViewById(R.id.btnState)
+        btnResting = findViewById(R.id.btnResting)
+        btnExercise = findViewById(R.id.btnExercise)
         etSys = findViewById(R.id.etSys)
         etDia = findViewById(R.id.etDia)
         etPulse = findViewById(R.id.etPulse)
-        ivPreview = findViewById(R.id.ivPreview)
         tvEmpty = findViewById(R.id.tvEmpty)
 
-        btnState.setOnClickListener {
-            state = if (state == State.RESTING) State.EXERCISE else State.RESTING
-            paintState()
-        }
+        btnResting.setOnClickListener { state = State.RESTING; paintState() }
+        btnExercise.setOnClickListener { state = State.EXERCISE; paintState() }
         paintState()
 
-        findViewById<Button>(R.id.btnCamera).setOnClickListener { takePhoto() }
+        // Jump to the next field once the value can't grow any further —
+        // "130" fills three digits, "79" can't extend to a valid diastolic.
+        autoAdvance(etSys, SYS_MAX, etDia)
+        autoAdvance(etDia, DIA_MAX, etPulse)
+        autoAdvance(etPulse, PULSE_MAX, null)
+
         findViewById<Button>(R.id.btnSave).setOnClickListener { save() }
 
         val list = findViewById<ListView>(R.id.list)
@@ -84,90 +92,44 @@ class MainActivity : Activity() {
             confirmDelete(adapter.getItem(pos))
             true
         }
-        list.setOnItemClickListener { _, _, pos, _ ->
-            adapter.getItem(pos).photo?.let { openPhoto(Uri.parse(it)) }
-        }
 
         refresh()
     }
 
     private fun paintState() {
-        btnState.text = "${State.emoji(state)}  ${State.label(state)}"
+        val active = if (state == State.RESTING) btnResting else btnExercise
+        val idle = if (state == State.RESTING) btnExercise else btnResting
+        active.backgroundTintList = ColorStateList.valueOf(BLUE)
+        active.setTextColor(Color.WHITE)
+        idle.backgroundTintList = ColorStateList.valueOf(GRAY)
+        idle.setTextColor(DARK)
+    }
+
+    private fun autoAdvance(et: EditText, max: Int, next: EditText?) {
+        et.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable) {
+                val v = s.toString().toIntOrNull() ?: return
+                if (s.length >= 3 || v * 10 > max) {
+                    if (next != null) {
+                        next.requestFocus()
+                    } else {
+                        hideKeyboard(et)
+                    }
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+    }
+
+    private fun hideKeyboard(v: View) {
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(v.windowToken, 0)
     }
 
     private fun refresh() {
         adapter.replace(db.all())
         tvEmpty.visibility = if (adapter.count == 0) View.VISIBLE else View.GONE
-    }
-
-    // ---------------------------------------------------------------- capture
-
-    private fun takePhoto() {
-        val cv = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "BP_${STAMP.format(Calendar.getInstance().time)}.jpg")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/BPTracker")
-        }
-        pendingPhoto = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
-        if (pendingPhoto == null) {
-            toast("Could not create an image file")
-            return
-        }
-
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            .putExtra(MediaStore.EXTRA_OUTPUT, pendingPhoto)
-            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-
-        // Some camera apps ignore the implicit grant, so grant explicitly too.
-        packageManager.queryIntentActivities(intent, 0).forEach {
-            grantUriPermission(
-                it.activityInfo.packageName, pendingPhoto,
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
-
-        try {
-            startActivityForResult(intent, REQ_PHOTO)
-        } catch (e: ActivityNotFoundException) {
-            contentResolver.delete(pendingPhoto!!, null, null)
-            pendingPhoto = null
-            toast("No camera app found")
-        }
-    }
-
-    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
-        super.onActivityResult(req, res, data)
-        when (req) {
-            REQ_PHOTO -> {
-                if (res == RESULT_OK && pendingPhoto != null) {
-                    attachedPhoto = pendingPhoto
-                    showPreview(attachedPhoto)
-                    etSys.requestFocus()
-                } else {
-                    pendingPhoto?.let { contentResolver.delete(it, null, null) }
-                }
-                pendingPhoto = null
-            }
-            REQ_IMPORT -> {
-                if (res == RESULT_OK) data?.data?.let { doImport(it) }
-            }
-        }
-    }
-
-    private fun showPreview(uri: Uri?) {
-        if (uri == null) {
-            ivPreview.visibility = View.GONE
-            return
-        }
-        try {
-            contentResolver.openInputStream(uri)?.use { ins ->
-                val opts = BitmapFactory.Options().apply { inSampleSize = 8 }
-                ivPreview.setImageBitmap(BitmapFactory.decodeStream(ins, null, opts))
-                ivPreview.visibility = View.VISIBLE
-            }
-        } catch (e: Exception) {
-            ivPreview.visibility = View.GONE
-        }
     }
 
     // ------------------------------------------------------------------- save
@@ -181,7 +143,7 @@ class MainActivity : Activity() {
             toast("Enter systolic, diastolic and pulse")
             return
         }
-        if (sys !in 50..280 || dia !in 30..200 || pulse !in 25..220) {
+        if (sys !in 50..SYS_MAX || dia !in 30..DIA_MAX || pulse !in 25..PULSE_MAX) {
             toast("Those numbers look out of range — check them")
             return
         }
@@ -196,14 +158,11 @@ class MainActivity : Activity() {
             time = ISO_TIME.format(now),
             state = state,
             sys = sys, dia = dia, pulse = pulse,
-            rating = Rating.of(state, sys, dia),
-            photo = attachedPhoto?.toString()
+            rating = Rating.of(state, sys, dia)
         )
         db.upsert(r)
 
         etSys.text.clear(); etDia.text.clear(); etPulse.text.clear()
-        attachedPhoto = null
-        showPreview(null)
         etSys.requestFocus()
 
         refresh()
@@ -239,6 +198,7 @@ class MainActivity : Activity() {
         return true
     }
 
+    /** Writes straight into Downloads — no share sheet. */
     private fun doExport() {
         val rows = db.all()
         if (rows.isEmpty()) { toast("Nothing to export yet"); return }
@@ -256,15 +216,7 @@ class MainActivity : Activity() {
             contentResolver.openOutputStream(uri)?.use {
                 it.write(Csv.export(rows).toByteArray(Charsets.UTF_8))
             }
-
-            val share = Intent(Intent.ACTION_SEND)
-                .setType("text/csv")
-                .putExtra(Intent.EXTRA_STREAM, uri)
-                .putExtra(Intent.EXTRA_SUBJECT, "Blood pressure readings")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            startActivity(Intent.createChooser(share, "Share $name"))
-
-            toast("${rows.size} readings saved to Downloads/$name")
+            toast("${rows.size} readings → Downloads/$name")
         } catch (e: Exception) {
             toast("Export failed: ${e.message}")
         }
@@ -280,6 +232,11 @@ class MainActivity : Activity() {
         } catch (e: ActivityNotFoundException) {
             toast("No file picker available")
         }
+    }
+
+    override fun onActivityResult(req: Int, res: Int, data: Intent?) {
+        super.onActivityResult(req, res, data)
+        if (req == REQ_IMPORT && res == RESULT_OK) data?.data?.let { doImport(it) }
     }
 
     private fun doImport(uri: Uri) {
@@ -307,18 +264,6 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ misc
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
-
-    private fun openPhoto(uri: Uri) {
-        try {
-            startActivity(
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "image/jpeg")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            )
-        } catch (e: Exception) {
-            toast("Photo is no longer available")
-        }
-    }
 
     /** dd/MM/yyyy for the screen; the database and CSV stay ISO. */
     private fun displayDate(iso: String): String {
@@ -353,12 +298,7 @@ class MainActivity : Activity() {
 
             val rating = v.findViewById<TextView>(R.id.rowRating)
             rating.text = Rating.emoji(r.rating)
-            // Unrated exercise rows are dimmed so a scan down the list only
-            // compares like with like.
             rating.alpha = if (r.rating == Rating.NONE) 0.35f else 1f
-
-            val cam = v.findViewById<TextView>(R.id.rowPhoto)
-            cam.visibility = if (r.photo != null) View.VISIBLE else View.INVISIBLE
 
             return v
         }
