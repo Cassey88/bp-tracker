@@ -164,7 +164,7 @@
             android:text="📸  Camera" />
 
         <Button
-            android:id="@+id/btnSave"
+            android:id="@+id/btnGallery"
             android:background="@drawable/btn_rounded"
             android:paddingTop="14dp"
             android:paddingBottom="14dp"
@@ -173,11 +173,25 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:textSize="18sp"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#0078D4"
+            android:textColor="#201F1E"
+            android:backgroundTint="#E1E1E1"
             android:stateListAnimator="@null"
-            android:text="Save" />
+            android:text="🖼️  Gallery" />
     </LinearLayout>
+
+    <Button
+        android:id="@+id/btnSave"
+        android:background="@drawable/btn_rounded"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#0078D4"
+        android:stateListAnimator="@null"
+        android:text="Save" />
 
     <View
         android:layout_width="match_parent"

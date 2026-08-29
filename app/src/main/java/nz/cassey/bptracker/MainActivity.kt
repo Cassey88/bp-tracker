@@ -61,6 +61,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_PHOTO = 1
         private const val REQ_IMPORT = 2
+        private const val REQ_GALLERY = 3
         private const val BLUE = 0xFF0078D4.toInt()
         private const val GRAY = 0xFFE1E1E1.toInt()
         private const val DARK = 0xFF201F1E.toInt()
@@ -94,16 +95,19 @@ class MainActivity : Activity() {
         autoAdvance(etPulse, PULSE_MAX, null)
 
         findViewById<Button>(R.id.btnScan).setOnClickListener { scan() }
+        findViewById<Button>(R.id.btnGallery).setOnClickListener { pickFromGallery() }
         findViewById<Button>(R.id.btnSave).setOnClickListener { save() }
 
         findViewById<TextView>(R.id.btnMenu).setOnClickListener { v ->
             val pm = PopupMenu(this, v)
             pm.menu.add(0, 1, 0, "Export CSV")
             pm.menu.add(0, 2, 1, "Import CSV")
+            pm.menu.add(0, 3, 2, "User guide")
             pm.setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> { doExport(); true }
                     2 -> { pickImport(); true }
+                    3 -> { showGuide(); true }
                     else -> false
                 }
             }
@@ -189,8 +193,52 @@ class MainActivity : Activity() {
                     f?.delete()
                 }
             }
+            REQ_GALLERY -> if (res == RESULT_OK) data?.data?.let { uri ->
+                val bmp = decodeScaled(uri)
+                if (bmp != null) ocr(bmp) else toast("Couldn't open that image")
+            }
             REQ_IMPORT -> if (res == RESULT_OK) data?.data?.let { doImport(it) }
         }
+    }
+
+    private fun pickFromGallery() {
+        etSys.requestFocus()
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("image/*")
+        try {
+            startActivityForResult(i, REQ_GALLERY)
+        } catch (e: ActivityNotFoundException) {
+            toast("No gallery app found")
+        }
+    }
+
+    private fun showGuide() {
+        val guide = """
+😴  Resting — measured after sitting quietly for a few minutes. Rated.
+
+🚴  Exercise — measured soon after exercise (e.g. qigong). Not rated, because the bands below only apply to resting readings.
+
+Ratings (the worse of the two numbers decides):
+
+👍  Good — below 120 and below 80
+🆗  OK — 120–129 or 80–84
+😐  Watch — 130–139 or 85–89
+😞  High — 140 or more, or 90 or more
+
+–  (dimmed) Exercise reading, not rated
+
+Tips:
+
+📸 Camera photographs the monitor and fills the numbers in. 🖼️ Gallery does the same from a photo you already have. Always check the numbers before Save — the LCD digits can be misread.
+
+Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; exports go to your Downloads folder.
+        """.trimIndent()
+        AlertDialog.Builder(this)
+            .setTitle("User guide")
+            .setMessage(guide)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     /**
@@ -205,7 +253,10 @@ class MainActivity : Activity() {
             file.delete(); return
         }
         file.delete()
+        ocr(bmp)
+    }
 
+    private fun ocr(bmp: Bitmap) {
         val client = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         client.process(InputImage.fromBitmap(bmp, 0))
             .addOnSuccessListener { r1 ->
@@ -229,6 +280,18 @@ class MainActivity : Activity() {
         while (maxOf(probe.outWidth, probe.outHeight) / (sample * 2) >= 1600) sample *= 2
         return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
+
+    private fun decodeScaled(uri: Uri): Bitmap? = try {
+        val probe = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, probe) }
+        if (probe.outWidth <= 0) null else {
+            var sample = 1
+            while (maxOf(probe.outWidth, probe.outHeight) / (sample * 2) >= 1600) sample *= 2
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            }
+        }
+    } catch (e: Exception) { null }
 
     private fun enhance(src: Bitmap): Bitmap {
         // Soften: down to 55% and back up, bilinear both ways.
