@@ -31,8 +31,10 @@ object State {
  * Rating bands follow the European / NZ classification. The worse of the two
  * numbers decides the band, e.g. 130/79 rates as WATCH on the systolic alone.
  *
- * Readings taken after exercise are deliberately left unrated — the thresholds
- * below only mean anything for a resting measurement.
+ * Exercise rows are rated with the same bands. Note that the thresholds are
+ * defined for resting measurements, so a post-exercise row will often land a
+ * band or two worse for reasons that have nothing to do with hypertension —
+ * the 🚴 marker on the row is what keeps the two comparable.
  */
 object Rating {
     const val GOOD = "good"
@@ -42,7 +44,6 @@ object Rating {
     const val NONE = "-"
 
     fun of(state: String, sys: Int, dia: Int): String {
-        if (state == State.EXERCISE) return NONE
         return when {
             sys >= 140 || dia >= 90 -> HIGH
             sys >= 130 || dia >= 85 -> WATCH

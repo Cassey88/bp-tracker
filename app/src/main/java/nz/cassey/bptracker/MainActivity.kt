@@ -300,7 +300,7 @@ class MainActivity : Activity() {
         val guide = """
 😴  Resting — measured after sitting quietly for a few minutes. Rated.
 
-🚴  Exercise — measured soon after exercise (e.g. qigong). Not rated, because the bands below only apply to resting readings.
+🚴  Exercise — measured soon after exercise (e.g. qigong). Rated with the same bands, but the thresholds are set for resting readings, so expect these to sit a band or two worse.
 
 Ratings (the worse of the two numbers decides):
 
@@ -779,7 +779,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
     private fun confirmDelete(r: Reading) {
         AlertDialog.Builder(this)
             .setTitle("Delete reading")
-            .setMessage("${displayDate(r.date)} ${r.time} — ${r.sys}/${r.dia}")
+            .setMessage("${displayDate(r.date)} ${displayTime(r.time)} — ${r.sys}/${r.dia}")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Delete") { _, _ ->
                 db.delete(r.id)
@@ -852,6 +852,20 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
+    /** 24-hour "14:05" on disk becomes "2:05 pm" on screen; the CSV is untouched. */
+    private fun displayTime(hhmm: String): String {
+        val p = hhmm.split(':')
+        if (p.size != 2) return hhmm
+        val h = p[0].toIntOrNull() ?: return hhmm
+        val suffix = if (h < 12) "am" else "pm"
+        val h12 = when {
+            h == 0 -> 12
+            h > 12 -> h - 12
+            else -> h
+        }
+        return "$h12:${p[1]} $suffix"
+    }
+
     private fun displayDate(iso: String): String {
         val p = iso.split('-')
         return if (p.size == 3) "${p[2]}/${p[1]}/${p[0]}" else iso
@@ -878,13 +892,12 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
 
             v.findViewById<TextView>(R.id.rowState).text = State.emoji(r.state)
             v.findViewById<TextView>(R.id.rowWhen).text =
-                "${displayDate(r.date)}  ${r.time}"
+                "${displayDate(r.date)}  ${displayTime(r.time)}"
             v.findViewById<TextView>(R.id.rowValues).text =
                 "${r.sys}/${r.dia}  \u2665 ${r.pulse}"
 
             val rating = v.findViewById<TextView>(R.id.rowRating)
             rating.text = Rating.emoji(r.rating)
-            rating.alpha = if (r.rating == Rating.NONE) 0.35f else 1f
 
             return v
         }
