@@ -309,20 +309,41 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
 
     private fun ocr(bmp: Bitmap) {
         val client = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        client.process(InputImage.fromBitmap(bmp, 0))
-            .addOnSuccessListener { r1 ->
-                if (applyOcr(r1, "1 — original")) {
-                    showLastScan()
-                } else {
-                    client.process(InputImage.fromBitmap(enhance(bmp), 0))
-                        .addOnSuccessListener { r2 ->
-                            applyOcr(r2, "2 — enhanced")
-                            showLastScan()
-                        }
-                        .addOnFailureListener { toast("Couldn't read the display — type the numbers") }
+
+        // Each pass is a different treatment of the same shot. Stop at the
+        // first that produces a usable reading.
+        fun attempt(index: Int) {
+            if (index > 2) {
+                showLastScan()
+                return
+            }
+            val label = when (index) {
+                0 -> "1 — original"
+                1 -> "2 — contrast"
+                else -> "3 — segments joined"
+            }
+            val prep = {
+                when (index) {
+                    0 -> bmp
+                    1 -> enhance(bmp)
+                    else -> binarize(bmp, 3)
                 }
             }
-            .addOnFailureListener { toast("Couldn't read the photo — type the numbers") }
+            // Thresholding is heavy enough to stutter the UI, so build the
+            // bitmap on a worker and come back to the main thread for ML Kit.
+            Thread {
+                val img = try { prep() } catch (e: Throwable) { bmp }
+                runOnUiThread {
+                    client.process(InputImage.fromBitmap(img, 0))
+                        .addOnSuccessListener { r ->
+                            if (applyOcr(r, label)) showLastScan() else attempt(index + 1)
+                        }
+                        .addOnFailureListener { attempt(index + 1) }
+                }
+            }.start()
+        }
+
+        attempt(0)
     }
 
     private fun decodeScaled(file: File): Bitmap? {
@@ -345,6 +366,76 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             }
         }
     } catch (e: Exception) { null }
+
+    /**
+     * Seven-segment digits are drawn as separate bars with gaps between them,
+     * which a general text recogniser often reads as several "1"s or misses
+     * entirely. Thresholding to pure black/white and then closing (dilate then
+     * erode) bridges those gaps so each digit becomes one connected shape.
+     */
+    private fun binarize(src: Bitmap, closeIter: Int): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+
+        val gray = IntArray(w * h)
+        val hist = IntArray(256)
+        for (i in px.indices) {
+            val c = px[i]
+            val g = ((c shr 16 and 0xFF) * 299 + (c shr 8 and 0xFF) * 587 + (c and 0xFF) * 114) / 1000
+            gray[i] = g
+            hist[g]++
+        }
+
+        // Otsu: pick the threshold that best separates the two brightness modes.
+        val total = w * h
+        var sum = 0L
+        for (t in 0..255) sum += t.toLong() * hist[t]
+        var sumB = 0L; var wB = 0; var best = 0.0; var thr = 128
+        for (t in 0..255) {
+            wB += hist[t]
+            if (wB == 0) continue
+            val wF = total - wB
+            if (wF == 0) break
+            sumB += t.toLong() * hist[t]
+            val mB = sumB.toDouble() / wB
+            val mF = (sum - sumB).toDouble() / wF
+            val between = wB.toDouble() * wF * (mB - mF) * (mB - mF)
+            if (between > best) { best = between; thr = t }
+        }
+
+        var on = BooleanArray(w * h) { gray[it] < thr }
+
+        fun morph(src: BooleanArray, dilate: Boolean): BooleanArray {
+            val out = BooleanArray(w * h)
+            for (y in 0 until h) {
+                val row = y * w
+                for (x in 0 until w) {
+                    var hit = !dilate
+                    loop@ for (dy in -1..1) {
+                        val yy = y + dy
+                        if (yy < 0 || yy >= h) continue
+                        for (dx in -1..1) {
+                            val xx = x + dx
+                            if (xx < 0 || xx >= w) continue
+                            val v = src[yy * w + xx]
+                            if (dilate && v) { hit = true; break@loop }
+                            if (!dilate && !v) { hit = false; break@loop }
+                        }
+                    }
+                    out[row + x] = hit
+                }
+            }
+            return out
+        }
+
+        repeat(closeIter) { on = morph(on, true) }
+        repeat(closeIter) { on = morph(on, false) }
+
+        for (i in px.indices) px[i] = if (on[i]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+    }
 
     private fun enhance(src: Bitmap): Bitmap {
         // Soften: down to 55% and back up, bilinear both ways.
