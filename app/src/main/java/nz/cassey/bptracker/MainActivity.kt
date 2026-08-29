@@ -61,8 +61,9 @@ class MainActivity : Activity() {
     /** True while OCR writes the fields, so auto-advance stays out of the way. */
     private var filling = false
 
-    /** Raw text from the last scan, for the "Last scan" diagnostic. */
+    /** Raw text and candidate list from the last scan, for diagnosis. */
     private var lastRaw: String = ""
+    private var lastDiag: String = ""
 
     companion object {
         private const val REQ_PHOTO = 1
@@ -222,10 +223,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun diagText(pass: String, all: List<Cand>, big: List<Cand>, outcome: String): String {
+        val fmt = { c: Cand -> "${c.v} (y=${c.y}, h=${c.h})" }
+        return buildString {
+            append("Pass: ").append(pass).append("\n\n")
+            append("Result: ").append(outcome).append("\n\n")
+            append("Large groups, top to bottom:\n")
+            append(if (big.isEmpty()) "  none\n" else big.joinToString("\n") { "  " + fmt(it) } + "\n")
+            append("\nAll number groups found:\n")
+            append(if (all.isEmpty()) "  none\n" else all.joinToString("\n") { "  " + fmt(it) } + "\n")
+            append("\nRaw recognised text:\n")
+            append(lastRaw)
+        }
+    }
+
     private fun showLastScan() {
         AlertDialog.Builder(this)
             .setTitle("Last scan")
-            .setMessage(if (lastRaw.isBlank()) "No scan yet." else lastRaw)
+            .setMessage(if (lastDiag.isBlank()) "No scan yet." else lastDiag)
             .setPositiveButton("OK", null)
             .show()
     }
@@ -336,7 +351,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
     private data class Cand(val v: Int, val x: Int, val y: Int, val h: Int)
 
     /** @return true if the fields were filled with a plausible triple. */
-    private fun applyOcr(text: Text): Boolean {
+    private fun applyOcr(text: Text, pass: String): Boolean {
         lastRaw = text.text.ifBlank { "(nothing recognised)" }
         val cands = ArrayList<Cand>()
 
@@ -361,7 +376,10 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             harvest(line.text, line.boundingBox)
             for (el in line.elements) harvest(el.text, el.boundingBox)
         }
-        if (cands.isEmpty()) return false
+        if (cands.isEmpty()) {
+            lastDiag = diagText(pass, emptyList(), emptyList(), "no 2-3 digit groups found")
+            return false
+        }
 
         // The three readings are the biggest characters in frame and sit in
         // one column. Keep tall candidates, dedupe near-identical hits.
@@ -379,6 +397,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         // searching for combinations.
         val picked = big.take(3)
         if (picked.size < 3) {
+            lastDiag = diagText(pass, cands, big, "only ${picked.size} large group(s) — need 3")
             if (picked.size == 2 && picked[0].v in 80..SYS_MAX &&
                 picked[1].v in 40..150 && picked[1].v < picked[0].v) {
                 filling = true
@@ -398,7 +417,11 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         // Refuse to fill nonsense. A wrong number that looks plausible is
         // worse than no number, because it can be saved without noticing.
         val sensible = a in 80..SYS_MAX && b in 40..150 && b < a && c in 30..PULSE_MAX
-        if (!sensible) return false
+        if (!sensible) {
+            lastDiag = diagText(pass, cands, big, "picked $a / $b / $c — outside sensible ranges")
+            return false
+        }
+        lastDiag = diagText(pass, cands, big, "filled $a / $b / $c")
 
         filling = true
         etSys.setText(a.toString())
@@ -409,7 +432,6 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         etSys.requestFocus()
         etSys.setSelection(etSys.text.length)
         hideKeyboard(etSys)
-        toast("Scanned $a/$b pulse $c — check, then Save")
         return true
     }
 
