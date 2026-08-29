@@ -231,6 +231,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun fill(sys: Int, dia: Int, pulse: Int) {
+        filling = true
+        etSys.setText(sys.toString())
+        etDia.setText(dia.toString())
+        etPulse.setText(pulse.toString())
+        filling = false
+        etSys.requestFocus()
+        etSys.setSelection(etSys.text.length)
+        hideKeyboard(etSys)
+    }
+
     private fun diagText(pass: String, all: List<Cand>, big: List<Cand>, outcome: String): String {
         val fmt = { c: Cand -> "${c.v} (y=${c.y}, h=${c.h})" }
         return buildString {
@@ -364,6 +375,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
     private fun applyOcr(text: Text, pass: String): Boolean {
         lastRaw = text.text.ifBlank { "(nothing recognised)" }
         val cands = ArrayList<Cand>()
+        val labels = HashMap<String, android.graphics.Rect>()
 
         fun harvest(raw: String, box: android.graphics.Rect?) {
             if (box == null) return
@@ -384,10 +396,46 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         // elements catch groups a line lumped in with other symbols.
         for (block in text.textBlocks) for (line in block.lines) {
             harvest(line.text, line.boundingBox)
-            for (el in line.elements) harvest(el.text, el.boundingBox)
+            for (el in line.elements) {
+                harvest(el.text, el.boundingBox)
+                // The monitor prints SYS / DIA / PULSE beside each number.
+                // Those words are the most reliable anchors in the frame.
+                val w = el.text.uppercase().filter { it.isLetter() }
+                val box = el.boundingBox
+                if (box != null && w in setOf("SYS", "DIA", "PULSE")) {
+                    labels.putIfAbsent(w, box)
+                }
+            }
         }
         if (cands.isEmpty()) {
             lastDiag = diagText(pass, emptyList(), emptyList(), "no 2-3 digit groups found")
+            return false
+        }
+
+        // Preferred path: match each number to the label printed beside it.
+        // A number counts only if it sits to the right of its label and on
+        // roughly the same line, which excludes anything elsewhere in frame.
+        fun beside(label: android.graphics.Rect?): Cand? {
+            if (label == null) return null
+            val tol = label.height() * 2.5
+            return cands
+                .filter { it.x > label.right && abs(it.y - label.centerY()) <= tol }
+                .maxByOrNull { it.h }
+        }
+
+        val ls = beside(labels["SYS"])
+        val ld = beside(labels["DIA"])
+        val lp = beside(labels["PULSE"])
+        if (ls != null && ld != null && lp != null) {
+            val ok = ls.v in 50..SYS_MAX && ld.v in 30..DIA_MAX &&
+                ld.v < ls.v && lp.v in 25..PULSE_MAX
+            val found = "labels SYS/DIA/PULSE found → ${ls.v} / ${ld.v} / ${lp.v}"
+            if (ok) {
+                lastDiag = diagText(pass, cands, listOf(ls, ld, lp), "filled from $found")
+                fill(ls.v, ld.v, lp.v)
+                return true
+            }
+            lastDiag = diagText(pass, cands, listOf(ls, ld, lp), "$found — outside sensible ranges")
             return false
         }
 
@@ -436,17 +484,8 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             lastDiag = diagText(pass, cands, big, "picked $a / $b / $c — outside sensible ranges")
             return false
         }
-        lastDiag = diagText(pass, cands, big, "filled $a / $b / $c")
-
-        filling = true
-        etSys.setText(a.toString())
-        etDia.setText(b.toString())
-        etPulse.setText(c.toString())
-        filling = false
-
-        etSys.requestFocus()
-        etSys.setSelection(etSys.text.length)
-        hideKeyboard(etSys)
+        lastDiag = diagText(pass, cands, big, "no labels found; filled $a / $b / $c by position")
+        fill(a, b, c)
         return true
     }
 
