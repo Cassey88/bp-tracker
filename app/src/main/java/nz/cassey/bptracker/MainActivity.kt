@@ -300,11 +300,13 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         val client = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         client.process(InputImage.fromBitmap(bmp, 0))
             .addOnSuccessListener { r1 ->
-                if (!applyOcr(r1)) {
-                    val enhanced = enhance(bmp)
-                    client.process(InputImage.fromBitmap(enhanced, 0))
+                if (applyOcr(r1, "1 — original")) {
+                    showLastScan()
+                } else {
+                    client.process(InputImage.fromBitmap(enhance(bmp), 0))
                         .addOnSuccessListener { r2 ->
-                            if (!applyOcr(r2)) toast("Couldn't read the display — type the numbers")
+                            applyOcr(r2, "2 — enhanced")
+                            showLastScan()
                         }
                         .addOnFailureListener { toast("Couldn't read the display — type the numbers") }
                 }
