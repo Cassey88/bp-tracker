@@ -58,6 +58,12 @@ class MainActivity : Activity() {
 
     private var scanFile: File? = null
 
+    /** True while OCR writes the fields, so auto-advance stays out of the way. */
+    private var filling = false
+
+    /** Raw text from the last scan, for the "Last scan" diagnostic. */
+    private var lastRaw: String = ""
+
     companion object {
         private const val REQ_PHOTO = 1
         private const val REQ_IMPORT = 2
@@ -103,11 +109,13 @@ class MainActivity : Activity() {
             pm.menu.add(0, 1, 0, "Export CSV")
             pm.menu.add(0, 2, 1, "Import CSV")
             pm.menu.add(0, 3, 2, "User guide")
+            pm.menu.add(0, 4, 3, "Last scan")
             pm.setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> { doExport(); true }
                     2 -> { pickImport(); true }
                     3 -> { showGuide(); true }
+                    4 -> { showLastScan(); true }
                     else -> false
                 }
             }
@@ -137,6 +145,7 @@ class MainActivity : Activity() {
     private fun autoAdvance(et: EditText, max: Int, next: EditText?) {
         et.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable) {
+                if (filling) return
                 val v = s.toString().toIntOrNull() ?: return
                 if (s.length >= 3 || v * 10 > max) {
                     if (next != null) next.requestFocus() else hideKeyboard(et)
@@ -211,6 +220,14 @@ class MainActivity : Activity() {
         } catch (e: ActivityNotFoundException) {
             toast("No gallery app found")
         }
+    }
+
+    private fun showLastScan() {
+        AlertDialog.Builder(this)
+            .setTitle("Last scan")
+            .setMessage(if (lastRaw.isBlank()) "No scan yet." else lastRaw)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun showGuide() {
@@ -320,6 +337,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
 
     /** @return true if the fields were filled with a plausible triple. */
     private fun applyOcr(text: Text): Boolean {
+        lastRaw = text.text.ifBlank { "(nothing recognised)" }
         val cands = ArrayList<Cand>()
 
         fun harvest(raw: String, box: android.graphics.Rect?) {
@@ -361,9 +379,12 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         // searching for combinations.
         val picked = big.take(3)
         if (picked.size < 3) {
-            if (picked.size == 2) {
+            if (picked.size == 2 && picked[0].v in 80..SYS_MAX &&
+                picked[1].v in 40..150 && picked[1].v < picked[0].v) {
+                filling = true
                 etSys.setText(picked[0].v.toString())
                 etDia.setText(picked[1].v.toString())
+                filling = false
                 etPulse.text.clear()
                 etPulse.requestFocus()
                 toast("Got ${picked[0].v}/${picked[1].v} — type the pulse")
@@ -373,16 +394,22 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         }
 
         val (a, b, c) = Triple(picked[0].v, picked[1].v, picked[2].v)
+
+        // Refuse to fill nonsense. A wrong number that looks plausible is
+        // worse than no number, because it can be saved without noticing.
+        val sensible = a in 80..SYS_MAX && b in 40..150 && b < a && c in 30..PULSE_MAX
+        if (!sensible) return false
+
+        filling = true
         etSys.setText(a.toString())
         etDia.setText(b.toString())
         etPulse.setText(c.toString())
+        filling = false
+
         etSys.requestFocus()
         etSys.setSelection(etSys.text.length)
         hideKeyboard(etSys)
-
-        val sensible = a in 80..SYS_MAX && b in 40..150 && b < a && c in 30..PULSE_MAX
-        toast(if (sensible) "Scanned $a/$b pulse $c — check, then Save"
-              else "Scanned $a/$b pulse $c — looks odd, please check")
+        toast("Scanned $a/$b pulse $c — check, then Save")
         return true
     }
 
