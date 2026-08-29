@@ -10,14 +10,27 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp">
 
+        <!--
+          Title carries the version, filled in from the package at runtime so
+          it can never drift from the installed build. Margins keep it clear
+          of the ⋮ button, and it autosizes so the version never pushes the
+          name off a narrow screen.
+        -->
         <TextView
+            android:id="@+id/tvTitle"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginStart="52dp"
+            android:layout_marginEnd="52dp"
             android:gravity="center"
+            android:maxLines="1"
             android:text="BP Tracker"
             android:textColor="#0078D4"
             android:textStyle="bold"
-            android:textSize="32sp" />
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="18sp"
+            android:autoSizeMaxTextSize="32sp"
+            android:autoSizeStepGranularity="1sp" />
 
         <TextView
             android:id="@+id/btnMenu"

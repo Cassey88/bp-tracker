@@ -94,6 +94,7 @@ class MainActivity : Activity() {
         etDia = findViewById(R.id.etDia)
         etPulse = findViewById(R.id.etPulse)
         tvEmpty = findViewById(R.id.tvEmpty)
+        showTitleWithVersion()
 
         btnResting.setOnClickListener { state = State.RESTING; paintState() }
         btnExercise.setOnClickListener { state = State.EXERCISE; paintState() }
@@ -256,6 +257,32 @@ class MainActivity : Activity() {
             append("\nRaw recognised text:\n")
             append(lastRaw)
         }
+    }
+
+    /**
+     * "BP Tracker  v2.3", with the version in smaller, lighter type beside the
+     * name. The number is read from the installed package rather than written
+     * into the layout, so it always matches the build actually running.
+     */
+    private fun showTitleWithVersion() {
+        val name = "BP Tracker"
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { null }
+
+        val title = findViewById<TextView>(R.id.tvTitle)
+        if (version.isNullOrBlank()) {
+            title.text = name
+            return
+        }
+        val full = "$name  v$version"
+        val span = android.text.SpannableString(full)
+        span.setSpan(
+            android.text.style.RelativeSizeSpan(0.55f),
+            name.length, full.length,
+            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        title.text = span
     }
 
     private fun showLastScan() {
@@ -828,7 +855,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             v.findViewById<TextView>(R.id.rowWhen).text =
                 "${displayDate(r.date)}  ${r.time}"
             v.findViewById<TextView>(R.id.rowValues).text =
-                "${r.sys}/${r.dia}   \u2665 ${r.pulse}"
+                "${r.sys}/${r.dia}  \u2665 ${r.pulse}"
 
             val rating = v.findViewById<TextView>(R.id.rowRating)
             rating.text = Rating.emoji(r.rating)
