@@ -169,7 +169,14 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------- scan
 
+    private fun clearFields() {
+        filling = true
+        etSys.text.clear(); etDia.text.clear(); etPulse.text.clear()
+        filling = false
+    }
+
     private fun scan() {
+        clearFields()
         etSys.requestFocus()
         val dir = File(cacheDir, "ocr").apply { mkdirs() }
         scanFile = File(dir, "scan.jpg").also { it.delete() }
@@ -212,6 +219,7 @@ class MainActivity : Activity() {
     }
 
     private fun pickFromGallery() {
+        clearFields()
         etSys.requestFocus()
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
@@ -465,7 +473,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         )
         db.upsert(r)
 
-        etSys.text.clear(); etDia.text.clear(); etPulse.text.clear()
+        clearFields()
         etSys.requestFocus()
 
         refresh()
