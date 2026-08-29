@@ -54,7 +54,7 @@ object Rating {
     fun emoji(r: String) = when (r) {
         GOOD -> "\uD83D\uDC4D"
         OK -> "\uD83C\uDD97"
-        WATCH -> "\u26A0\uFE0F"
+        WATCH -> "\uD83D\uDE10"
         HIGH -> "\uD83D\uDE1E"
         else -> "\u2013"
     }
