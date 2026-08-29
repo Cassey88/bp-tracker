@@ -66,6 +66,7 @@ class MainActivity : Activity() {
     private var lastRaw: String = ""
     private var lastDiag: String = ""
     private var scanBmp: Bitmap? = null
+    private var segLog: String = ""
 
     companion object {
         private const val REQ_PHOTO = 1
@@ -248,6 +249,8 @@ class MainActivity : Activity() {
     private fun diagText(pass: String, all: List<Cand>, big: List<Cand>, outcome: String): String {
         val fmt = { c: Cand -> "${c.v} (y=${c.y}, h=${c.h})" }
         return buildString {
+            if (segLog.isNotBlank()) append(segLog).append("\n\n----------\n\n")
+            append("Fallback: text recogniser\n")
             append("Pass: ").append(pass).append("\n\n")
             append("Result: ").append(outcome).append("\n\n")
             append("Large groups, top to bottom:\n")
@@ -594,18 +597,26 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
                 src, roi,
                 listOf(lSys.centerY(), lDia.centerY(), lPul.centerY())
             )
+            segLog = "Method: seven-segment decoder\n" + seg.log
             if (seg.rows.size == 3) {
                 val (a, b, c) = Triple(seg.rows[0], seg.rows[1], seg.rows[2])
                 val ok = a in 50..SYS_MAX && b in 30..DIA_MAX && b < a && c in 25..PULSE_MAX
-                lastDiag = "Method: seven-segment decoder\n\n" +
+                segLog = "Method: seven-segment decoder\n" +
                     "Result: ${if (ok) "filled" else "rejected"} $a / $b / $c\n\n" + seg.log
                 if (ok) {
                     fill(a, b, c)
                     return true
                 }
             } else {
-                lastDiag = "Method: seven-segment decoder\n\nResult: read ${seg.rows.size} of 3 rows\n\n" + seg.log
+                segLog = "Method: seven-segment decoder\n" +
+                    "Result: read ${seg.rows.size} of 3 rows — falling back\n\n" + seg.log
             }
+        } else {
+            segLog = "Method: seven-segment decoder did not run\n" +
+                "src=${if (src == null) "no bitmap" else "ok"} " +
+                "SYS=${if (lSys == null) "not found" else "ok"} " +
+                "DIA=${if (lDia == null) "not found" else "ok"} " +
+                "PULSE=${if (lPul == null) "not found" else "ok"}"
         }
 
         // Fallback: match each number the text recogniser found to the label
@@ -615,11 +626,25 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         // labels are small print and the readout digits are tall, so a label's
         // centre can sit well away from the number's centre and still belong
         // to it. Requiring a tight match here is what left the fields blank.
+        // Row spacing sets the scale of a real readout digit. Anything much
+        // smaller is print elsewhere in the frame — a timestamp, a diary page —
+        // and must never be offered as a reading.
+        val rowGap = if (lDia != null && lSys != null) abs(lDia.centerY() - lSys.centerY()) else 0
+        val minDigit = (rowGap * 0.35f).toInt()
+
+        val used = HashSet<Int>()
         fun beside(label: android.graphics.Rect?): Cand? {
             if (label == null) return null
-            return cands
-                .filter { it.x > label.left && abs(it.y - label.centerY()) <= it.h * 1.2 }
+            val pick = cands
+                .filter {
+                    it.x > label.left &&
+                        abs(it.y - label.centerY()) <= it.h * 1.2 &&
+                        it.h >= minDigit &&
+                        it.y !in used
+                }
                 .maxByOrNull { it.h }
+            if (pick != null) used.add(pick.y)   // one group cannot serve two fields
+            return pick
         }
 
         val ls = beside(labels["SYS"])
