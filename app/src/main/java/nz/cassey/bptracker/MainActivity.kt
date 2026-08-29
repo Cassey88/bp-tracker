@@ -512,12 +512,14 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         val lSys = labels["SYS"]; val lDia = labels["DIA"]; val lPul = labels["PULSE"]
         if (src != null && lSys != null && lDia != null && lPul != null) {
             val left = maxOf(lSys.right, lDia.right, lPul.right)
-            val pad = (lPul.centerY() - lSys.centerY()) / 4
+            // Row gap doubles as the digit height, so reach a full row beyond
+            // the outer labels — clipping the pulse row was losing it entirely.
+            val gap = (lPul.centerY() - lSys.centerY()) / 2
             val roi = android.graphics.Rect(
-                left + pad / 4,
-                lSys.centerY() - pad,
+                left,
+                lSys.centerY() - (gap * 0.75f).toInt(),
                 src.width,
-                lPul.centerY() + pad
+                lPul.centerY() + (gap * 0.75f).toInt()
             )
             val seg = SevenSegment.read(
                 src, roi,

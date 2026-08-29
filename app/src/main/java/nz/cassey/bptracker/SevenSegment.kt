@@ -72,25 +72,30 @@ object SevenSegment {
             bmp = Bitmap.createScaledBitmap(bmp, 900, (bmp.height * scale).toInt(), true)
         }
 
-        val raw = binarize(bmp)
+        val raw = adaptive(bmp)
         log.append("ROI ${crop.width()}x${crop.height()} → ${bmp.width}x${bmp.height}\n")
 
         // Segments within one digit are separate bars. Closing joins them into
         // a single shape so the digit can be found as one connected blob, while
         // the untouched `raw` image is what the bars are actually measured on.
-        val joined = close(raw, kotlin.math.max(2, bmp.height / 45))
+        val joined = close(raw, kotlin.math.max(1, bmp.height / 150))
 
-        val blobs = blobs(joined)
-        if (blobs.isEmpty()) return Result(emptyList(), log.append("no shapes found").toString())
+        val all = blobs(joined, bmp.width, bmp.height)
+        if (all.isEmpty()) return Result(emptyList(), log.append("no shapes found").toString())
 
-        val tallest = blobs.maxOf { it.height() }
-        // Digits dominate the display; the OK badge and heart icon are smaller.
-        val digits = blobs.filter {
-            it.height() >= tallest * 0.55 &&
-                it.width() >= tallest * 0.10 &&
-                it.width() <= tallest * 1.20
+        // Digits repeat at one height. Furniture — the panel edge, a glare
+        // band, the OK badge — sits well off that height, so the median is a
+        // far better reference than the tallest thing in frame.
+        val ceiling = all.maxOf { it.height() }
+        val tallish = all.filter { it.height() >= ceiling * 0.25 }
+        val heights = tallish.map { it.height() }.sorted()
+        val med = heights[heights.size / 2]
+
+        val digits = tallish.filter {
+            it.height() >= med * 0.78 && it.height() <= med * 1.22 && it.width() <= med * 1.2
         }
-        log.append("shapes ${blobs.size}, digit-sized ${digits.size}, tallest ${tallest}px\n")
+        val tallest = med
+        log.append("shapes ${all.size}, digit height ~${med}px, digits ${digits.size}\n")
         if (digits.isEmpty()) return Result(emptyList(), log.toString())
 
         // Group into rows by vertical overlap.
@@ -148,42 +153,54 @@ object SevenSegment {
         return if (out.width() < 20 || out.height() < 20) null else out
     }
 
-    /** Otsu threshold; dark pixels become "on". */
-    private fun binarize(bmp: Bitmap): Bin {
+    /**
+     * Adaptive threshold against a local average.
+     *
+     * A single global cutoff fails on these photos: the LCD carries a strong
+     * brightness gradient, so a threshold that separates digits from panel at
+     * the top classifies the whole darker bottom of the panel as ink, and the
+     * lower rows disappear into one blob. Comparing each pixel with the mean of
+     * its own neighbourhood removes the gradient.
+     */
+    private fun adaptive(bmp: Bitmap): Bin {
         val w = bmp.width
         val h = bmp.height
         val px = IntArray(w * h)
         bmp.getPixels(px, 0, w, 0, 0, w, h)
 
         val gray = IntArray(w * h)
-        val hist = IntArray(256)
         for (i in px.indices) {
             val c = px[i]
-            val g = ((c shr 16 and 0xFF) * 299 + (c shr 8 and 0xFF) * 587 + (c and 0xFF) * 114) / 1000
-            gray[i] = g
-            hist[g]++
+            gray[i] = ((c shr 16 and 0xFF) * 299 + (c shr 8 and 0xFF) * 587 + (c and 0xFF) * 114) / 1000
         }
 
-        val total = w * h
-        var sum = 0L
-        for (t in 0..255) sum += t.toLong() * hist[t]
-        var sumB = 0L
-        var wB = 0
-        var best = -1.0
-        var thr = 128
-        for (t in 0..255) {
-            wB += hist[t]
-            if (wB == 0) continue
-            val wF = total - wB
-            if (wF == 0) break
-            sumB += t.toLong() * hist[t]
-            val mB = sumB.toDouble() / wB
-            val mF = (sum - sumB).toDouble() / wF
-            val between = wB.toDouble() * wF * (mB - mF) * (mB - mF)
-            if (between > best) { best = between; thr = t }
+        // Integral image so the window mean is O(1) per pixel.
+        val integral = LongArray((w + 1) * (h + 1))
+        for (y in 0 until h) {
+            var rowSum = 0L
+            for (x in 0 until w) {
+                rowSum += gray[y * w + x]
+                integral[(y + 1) * (w + 1) + (x + 1)] = integral[y * (w + 1) + (x + 1)] + rowSum
+            }
         }
 
-        return Bin(w, h, BooleanArray(w * h) { gray[it] < thr })
+        val r = kotlin.math.max(7, h / 6)
+        val on = BooleanArray(w * h)
+        for (y in 0 until h) {
+            val y0 = kotlin.math.max(0, y - r)
+            val y1 = kotlin.math.min(h - 1, y + r)
+            for (x in 0 until w) {
+                val x0 = kotlin.math.max(0, x - r)
+                val x1 = kotlin.math.min(w - 1, x + r)
+                val area = (x1 - x0 + 1).toLong() * (y1 - y0 + 1)
+                val sum = integral[(y1 + 1) * (w + 1) + (x1 + 1)] -
+                    integral[y0 * (w + 1) + (x1 + 1)] -
+                    integral[(y1 + 1) * (w + 1) + x0] +
+                    integral[y0 * (w + 1) + x0]
+                on[y * w + x] = gray[y * w + x] < (sum / area) - 12
+            }
+        }
+        return Bin(w, h, on)
     }
 
     private fun close(b: Bin, iter: Int): Bin {
@@ -216,7 +233,7 @@ object SevenSegment {
     }
 
     /** Connected components, iterative so a large display can't blow the stack. */
-    private fun blobs(b: Bin): List<Rect> {
+    private fun blobs(b: Bin, w: Int, h: Int): List<Rect> {
         val seen = BooleanArray(b.w * b.h)
         val out = ArrayList<Rect>()
         val stack = IntArray(b.w * b.h)
@@ -248,7 +265,10 @@ object SevenSegment {
                 }
             }
 
-            if (count > 30) out.add(Rect(x0, y0, x1 + 1, y1 + 1))
+            // Shapes running off the edge are bezel or glare, never digits.
+            val touchesEdge = x0 <= 1 || y0 <= 1 || x1 >= w - 2 || y1 >= h - 2
+            val oversized = (y1 - y0) > h * 0.45 || (x1 - x0) > w * 0.45
+            if (count > 200 && !touchesEdge && !oversized) out.add(Rect(x0, y0, x1 + 1, y1 + 1))
         }
         return out
     }
@@ -264,7 +284,7 @@ object SevenSegment {
         val w = box.width().toFloat()
         val h = box.height().toFloat()
         if (h < 8f) return null
-        if (w / h < 0.34f) return 1
+        if (w / h < 0.36f) return 1
 
         val lit = BooleanArray(7)
         for (s in 0 until 7) {
