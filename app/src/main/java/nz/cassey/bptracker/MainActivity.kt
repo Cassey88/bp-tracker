@@ -391,34 +391,39 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             return false
         }
 
-        // The three readings are the biggest characters in frame and sit in
-        // one column. Keep tall candidates, dedupe near-identical hits.
-        val maxH = cands.maxOf { it.h }
-        val big = cands.filter { it.h >= maxH * 0.40 }
-            .sortedBy { it.y }
+        // A photo of the monitor usually catches other text too — a diary page,
+        // a phone timestamp, packaging. Those numbers are the wrong size and in
+        // the wrong place, so instead of taking whatever is tallest, find the
+        // group that actually looks like a readout: three or more numbers of
+        // similar glyph height, stacked in one column.
+        val clusters = ArrayList<ArrayList<Cand>>()
+        for (c in cands.sortedByDescending { it.h }) {
+            val home = clusters.firstOrNull { cl ->
+                val ref = cl[0]
+                val ratio = c.h.toDouble() / ref.h
+                ratio in 0.65..1.55 && abs(c.x - ref.x) <= ref.h * 2.2
+            }
+            if (home != null) home.add(c) else clusters.add(arrayListOf(c))
+        }
+
+        // Prefer a cluster holding a full readout; among those, the one with
+        // the tallest digits, since the display dominates a well-framed shot.
+        val best = clusters
+            .filter { it.size >= 3 }
+            .maxByOrNull { cl -> cl.sumOf { it.h }.toDouble() / cl.size }
+            ?: clusters.maxByOrNull { cl -> cl.sumOf { it.h }.toDouble() / cl.size }
+            ?: return false
+
+        val big = best.sortedBy { it.y }
             .fold(ArrayList<Cand>()) { acc, c ->
-                val dup = acc.any { abs(it.y - c.y) < maxH / 3 && it.v == c.v }
+                val dup = acc.any { abs(it.y - c.y) < c.h / 2 && it.v == c.v }
                 if (!dup) acc.add(c)
                 acc
             }
 
-        // The Omron layout is fixed — SYS on top, DIA in the middle, PULSE
-        // at the bottom — so assign strictly by vertical position rather than
-        // searching for combinations.
         val picked = big.take(3)
         if (picked.size < 3) {
-            lastDiag = diagText(pass, cands, big, "only ${picked.size} large group(s) — need 3")
-            if (picked.size == 2 && picked[0].v in 80..SYS_MAX &&
-                picked[1].v in 40..150 && picked[1].v < picked[0].v) {
-                filling = true
-                etSys.setText(picked[0].v.toString())
-                etDia.setText(picked[1].v.toString())
-                filling = false
-                etPulse.text.clear()
-                etPulse.requestFocus()
-                toast("Got ${picked[0].v}/${picked[1].v} — type the pulse")
-                return true
-            }
+            lastDiag = diagText(pass, cands, big, "only ${picked.size} number(s) in the readout column — need 3")
             return false
         }
 

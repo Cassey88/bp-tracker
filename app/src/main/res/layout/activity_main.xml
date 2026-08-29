@@ -89,7 +89,6 @@
                 android:inputType="number"
                 android:maxLength="3"
                 android:textSize="28sp"
-                android:hint="130"
                 android:importantForAutofill="no" />
         </LinearLayout>
 
@@ -113,7 +112,6 @@
                 android:inputType="number"
                 android:maxLength="3"
                 android:textSize="28sp"
-                android:hint="79"
                 android:importantForAutofill="no" />
         </LinearLayout>
 
@@ -137,7 +135,6 @@
                 android:inputType="number"
                 android:maxLength="3"
                 android:textSize="28sp"
-                android:hint="87"
                 android:imeOptions="actionDone"
                 android:importantForAutofill="no" />
         </LinearLayout>
