@@ -413,29 +413,56 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         }
 
         // Preferred path: match each number to the label printed beside it.
-        // A number counts only if it sits to the right of its label and on
-        // roughly the same line, which excludes anything elsewhere in frame.
+        // Tolerance is scaled off the digit height, not the label height — the
+        // labels are small print and the readout digits are tall, so a label's
+        // centre can sit well away from the number's centre and still belong
+        // to it. Requiring a tight match here is what left the fields blank.
         fun beside(label: android.graphics.Rect?): Cand? {
             if (label == null) return null
-            val tol = label.height() * 2.5
             return cands
-                .filter { it.x > label.right && abs(it.y - label.centerY()) <= tol }
+                .filter { it.x > label.left && abs(it.y - label.centerY()) <= it.h * 1.2 }
                 .maxByOrNull { it.h }
         }
 
         val ls = beside(labels["SYS"])
         val ld = beside(labels["DIA"])
         val lp = beside(labels["PULSE"])
-        if (ls != null && ld != null && lp != null) {
-            val ok = ls.v in 50..SYS_MAX && ld.v in 30..DIA_MAX &&
-                ld.v < ls.v && lp.v in 25..PULSE_MAX
-            val found = "labels SYS/DIA/PULSE found → ${ls.v} / ${ld.v} / ${lp.v}"
-            if (ok) {
-                lastDiag = diagText(pass, cands, listOf(ls, ld, lp), "filled from $found")
-                fill(ls.v, ld.v, lp.v)
+
+        if (ls != null || ld != null || lp != null) {
+            val found = "SYS=${ls?.v ?: "-"}  DIA=${ld?.v ?: "-"}  PULSE=${lp?.v ?: "-"}"
+            val keep = listOfNotNull(ls, ld, lp)
+
+            // Fill whatever was matched. A partial fill beats a blank form —
+            // anything missing is one field to type rather than three.
+            val sysOk = ls != null && ls.v in 50..SYS_MAX
+            val diaOk = ld != null && ld.v in 30..DIA_MAX
+            val pulseOk = lp != null && lp.v in 25..PULSE_MAX
+
+            if (sysOk || diaOk || pulseOk) {
+                filling = true
+                if (sysOk) etSys.setText(ls!!.v.toString())
+                if (diaOk) etDia.setText(ld!!.v.toString())
+                if (pulseOk) etPulse.setText(lp!!.v.toString())
+                filling = false
+
+                val missing = when {
+                    !sysOk -> etSys
+                    !diaOk -> etDia
+                    !pulseOk -> etPulse
+                    else -> null
+                }
+                if (missing != null) {
+                    missing.requestFocus()
+                } else {
+                    etSys.requestFocus()
+                    etSys.setSelection(etSys.text.length)
+                    hideKeyboard(etSys)
+                }
+                lastDiag = diagText(pass, cands, keep, "from labels → $found")
                 return true
             }
-            lastDiag = diagText(pass, cands, listOf(ls, ld, lp), "$found — outside sensible ranges")
+
+            lastDiag = diagText(pass, cands, keep, "labels found but no usable number → $found")
             return false
         }
 
