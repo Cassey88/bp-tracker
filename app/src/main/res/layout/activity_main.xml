@@ -12,20 +12,28 @@
 
         <Button
             android:id="@+id/btnResting"
+            android:background="@drawable/btn_rounded"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="18sp"
+            android:backgroundTint="#E1E1E1"
             android:stateListAnimator="@null"
             android:text="😴  Resting" />
 
         <Button
             android:id="@+id/btnExercise"
+            android:background="@drawable/btn_rounded"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:textSize="18sp"
+            android:backgroundTint="#E1E1E1"
             android:stateListAnimator="@null"
             android:text="🚴  Exercise" />
     </LinearLayout>
@@ -47,7 +55,7 @@
                 android:text="SYS"
                 android:textColor="#0078D4"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="18sp" />
             <EditText
                 android:id="@+id/etSys"
                 android:layout_width="match_parent"
@@ -71,7 +79,7 @@
                 android:text="DIA"
                 android:textColor="#0078D4"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="18sp" />
             <EditText
                 android:id="@+id/etDia"
                 android:layout_width="match_parent"
@@ -95,7 +103,7 @@
                 android:text="PULSE"
                 android:textColor="#0078D4"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="18sp" />
             <EditText
                 android:id="@+id/etPulse"
                 android:layout_width="match_parent"
@@ -117,6 +125,9 @@
 
         <Button
             android:id="@+id/btnScan"
+            android:background="@drawable/btn_rounded"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -124,10 +135,13 @@
             android:textColor="#201F1E"
             android:backgroundTint="#E1E1E1"
             android:stateListAnimator="@null"
-            android:text="📷  Scan" />
+            android:text="📸  Camera" />
 
         <Button
             android:id="@+id/btnSave"
+            android:background="@drawable/btn_rounded"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"

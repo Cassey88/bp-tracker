@@ -150,6 +150,7 @@ class MainActivity : Activity() {
      * deleted straight after — nothing is kept.
      */
     private fun scan() {
+        etSys.requestFocus()
         val dir = File(cacheDir, "ocr").apply { mkdirs() }
         scanFile = File(dir, "scan.jpg").also { it.delete() }
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", scanFile!!)
@@ -213,7 +214,9 @@ class MainActivity : Activity() {
                 etSys.setText(sy.toString())
                 etDia.setText(d.toString())
                 etPulse.setText(pu.toString())
-                hideKeyboard(etPulse)
+                etSys.requestFocus()
+                etSys.setSelection(etSys.text.length)
+                hideKeyboard(etSys)
                 toast("Scanned $sy/$d pulse $pu — check, then Save")
                 return
             }
