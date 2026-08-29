@@ -293,27 +293,34 @@ class MainActivity : Activity() {
                 acc
             }
 
-        fun tryFill(pool: List<Cand>): Boolean {
-            for (i in pool.indices) for (j in i + 1 until pool.size) for (k in j + 1 until pool.size) {
-                val a = pool[i]; val b = pool[j]; val c = pool[k]
-                val columnTol = maxH * 3
-                if (abs(a.x - b.x) > columnTol || abs(b.x - c.x) > columnTol) continue
-                if (a.v in 80..SYS_MAX && b.v in 40..150 && b.v < a.v && c.v in 30..PULSE_MAX) {
-                    etSys.setText(a.v.toString())
-                    etDia.setText(b.v.toString())
-                    etPulse.setText(c.v.toString())
-                    etSys.requestFocus()
-                    etSys.setSelection(etSys.text.length)
-                    hideKeyboard(etSys)
-                    toast("Scanned ${a.v}/${b.v} pulse ${c.v} — check, then Save")
-                    return true
-                }
+        // The Omron layout is fixed — SYS on top, DIA in the middle, PULSE
+        // at the bottom — so assign strictly by vertical position rather than
+        // searching for combinations.
+        val picked = big.take(3)
+        if (picked.size < 3) {
+            if (picked.size == 2) {
+                etSys.setText(picked[0].v.toString())
+                etDia.setText(picked[1].v.toString())
+                etPulse.text.clear()
+                etPulse.requestFocus()
+                toast("Got ${picked[0].v}/${picked[1].v} — type the pulse")
+                return true
             }
             return false
         }
 
-        if (tryFill(big)) return true
-        return tryFill(cands.sortedBy { it.y })
+        val (a, b, c) = Triple(picked[0].v, picked[1].v, picked[2].v)
+        etSys.setText(a.toString())
+        etDia.setText(b.toString())
+        etPulse.setText(c.toString())
+        etSys.requestFocus()
+        etSys.setSelection(etSys.text.length)
+        hideKeyboard(etSys)
+
+        val sensible = a in 80..SYS_MAX && b in 40..150 && b < a && c in 30..PULSE_MAX
+        toast(if (sensible) "Scanned $a/$b pulse $c — check, then Save"
+              else "Scanned $a/$b pulse $c — looks odd, please check")
+        return true
     }
 
     // ------------------------------------------------------------------- save
