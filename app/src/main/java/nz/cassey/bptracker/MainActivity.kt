@@ -64,6 +64,7 @@ class MainActivity : Activity() {
     /** Raw text and candidate list from the last scan, for diagnosis. */
     private var lastRaw: String = ""
     private var lastDiag: String = ""
+    private var scanBmp: Bitmap? = null
 
     companion object {
         private const val REQ_PHOTO = 1
@@ -308,6 +309,7 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
     }
 
     private fun ocr(bmp: Bitmap) {
+        scanBmp = bmp
         val client = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         // Each pass is a different treatment of the same shot. Stop at the
@@ -503,7 +505,40 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
             return false
         }
 
-        // Preferred path: match each number to the label printed beside it.
+        // Preferred path: read the bars directly. The labels only serve to
+        // locate the readout and to say which row is which; the digits
+        // themselves are measured, not recognised.
+        val src = scanBmp
+        val lSys = labels["SYS"]; val lDia = labels["DIA"]; val lPul = labels["PULSE"]
+        if (src != null && lSys != null && lDia != null && lPul != null) {
+            val left = maxOf(lSys.right, lDia.right, lPul.right)
+            val pad = (lPul.centerY() - lSys.centerY()) / 4
+            val roi = android.graphics.Rect(
+                left + pad / 4,
+                lSys.centerY() - pad,
+                src.width,
+                lPul.centerY() + pad
+            )
+            val seg = SevenSegment.read(
+                src, roi,
+                listOf(lSys.centerY(), lDia.centerY(), lPul.centerY())
+            )
+            if (seg.rows.size == 3) {
+                val (a, b, c) = Triple(seg.rows[0], seg.rows[1], seg.rows[2])
+                val ok = a in 50..SYS_MAX && b in 30..DIA_MAX && b < a && c in 25..PULSE_MAX
+                lastDiag = "Method: seven-segment decoder\n\n" +
+                    "Result: ${if (ok) "filled" else "rejected"} $a / $b / $c\n\n" + seg.log
+                if (ok) {
+                    fill(a, b, c)
+                    return true
+                }
+            } else {
+                lastDiag = "Method: seven-segment decoder\n\nResult: read ${seg.rows.size} of 3 rows\n\n" + seg.log
+            }
+        }
+
+        // Fallback: match each number the text recogniser found to the label
+        // printed beside it.
         // Tolerance is scaled off the digit height, not the label height — the
         // labels are small print and the readout digits are tall, so a label's
         // centre can sit well away from the number's centre and still belong
