@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.net.Uri
 import android.os.Bundle
@@ -348,13 +349,45 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         attempt(0)
     }
 
+    /**
+     * Apply the JPEG's EXIF rotation to the pixels.
+     *
+     * BitmapFactory ignores the orientation flag, so a portrait photo from the
+     * phone's camera decodes sideways. The label text is then unreadable to the
+     * recogniser, the display can't be located, and the segment decoder never
+     * gets a chance — which is why gallery images behaved differently from a
+     * fresh capture.
+     */
+    private fun applyExif(bmp: Bitmap, orientation: Int): Bitmap {
+        val m = Matrix()
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
+            android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
+            android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            else -> return bmp
+        }
+        return try {
+            Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+        } catch (e: Throwable) { bmp }
+    }
+
     private fun decodeScaled(file: File): Bitmap? {
         val probe = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, probe)
         if (probe.outWidth <= 0) return null
         var sample = 1
         while (maxOf(probe.outWidth, probe.outHeight) / (sample * 2) >= 1600) sample *= 2
-        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        val bmp = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        val o = try {
+            android.media.ExifInterface(file.path).getAttributeInt(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_NORMAL
+            )
+        } catch (e: Exception) { android.media.ExifInterface.ORIENTATION_NORMAL }
+        return applyExif(bmp, o)
     }
 
     private fun decodeScaled(uri: Uri): Bitmap? = try {
@@ -363,9 +396,18 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         if (probe.outWidth <= 0) null else {
             var sample = 1
             while (maxOf(probe.outWidth, probe.outHeight) / (sample * 2) >= 1600) sample *= 2
-            contentResolver.openInputStream(uri)?.use {
+            val bmp = contentResolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
             }
+            val o = try {
+                contentResolver.openInputStream(uri)?.use { ins ->
+                    android.media.ExifInterface(ins).getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL
+                    )
+                } ?: android.media.ExifInterface.ORIENTATION_NORMAL
+            } catch (e: Exception) { android.media.ExifInterface.ORIENTATION_NORMAL }
+            if (bmp == null) null else applyExif(bmp, o)
         }
     } catch (e: Exception) { null }
 
@@ -540,7 +582,8 @@ Long-press a reading to delete it. Export and Import CSV are in the ⋮ menu; ex
         }
 
         // Fallback: match each number the text recogniser found to the label
-        // printed beside it.
+        // printed beside it. Reaching here means the segment decoder could not
+        // run or could not agree on three rows.
         // Tolerance is scaled off the digit height, not the label height — the
         // labels are small print and the readout digits are tall, so a label's
         // centre can sit well away from the number's centre and still belong
